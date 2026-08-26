@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Planner">
+  <meta name="theme-color" content="#0a0a0f">
+  <title>Planner</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <section id="screen-home" class="screen active">
+      <header class="header">
+        <div class="logo">P</div>
+        <h1>Plan your day!</h1>
+        <p class="subtitle" id="today-date"></p>
+      </header>
+
+      <div id="notif-banner" class="notif-banner warn">
+        <p id="notif-status">Checking notifications…</p>
+        <button type="button" class="btn-notif" id="btn-enable-notif">Enable</button>
+        <button type="button" class="btn-notif secondary" id="btn-test-notif">Test</button>
+      </div>
+
+      <div id="schedule-preview" class="schedule-preview hidden">
+        <h2>Today's plan</h2>
+        <ul id="schedule-list" class="schedule-list"></ul>
+      </div>
+
+      <div class="activities-section">
+        <h2>What do you want to do?</h2>
+        <div id="activity-grid" class="activity-grid"></div>
+      </div>
+    </section>
+
+    <section id="screen-time" class="screen">
+      <header class="header compact">
+        <button type="button" class="btn-back" id="btn-back" aria-label="Go back">←</button>
+        <h1 id="selected-activity-name">Activity</h1>
+      </header>
+
+      <div class="time-picker">
+        <div class="time-block">
+          <label for="start-time">From</label>
+          <input type="time" id="start-time" required>
+        </div>
+        <div class="time-divider">→</div>
+        <div class="time-block">
+          <label for="end-time">To</label>
+          <input type="time" id="end-time" required>
+        </div>
+      </div>
+
+      <p id="time-error" class="error hidden">End time must be after start time.</p>
+      <button type="button" class="btn-primary" id="btn-confirm">Confirm activity</button>
+    </section>
+
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal">
+        <h2>Add custom activity</h2>
+        <input type="text" id="custom-activity-input" placeholder="e.g. Guitar practice" maxlength="40" autocomplete="off">
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="btn-cancel-custom">Cancel</button>
+          <button type="button" class="btn-primary" id="btn-save-custom">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="js/app.js?v=3"></script>
+</body>
+</html>
