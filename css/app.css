@@ -39,7 +39,7 @@ body {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding: calc(var(--safe-top) + 1rem) 1.25rem calc(var(--safe-bottom) + 1.5rem);
+  padding: calc(var(--safe-top) + 1rem) 1.25rem calc(var(--safe-bottom) + 5rem);
 }
 
 .screen {
@@ -130,15 +130,22 @@ body {
 .schedule-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5rem;
   padding: 0.65rem 0.75rem;
   background: var(--bg);
   border-radius: 10px;
   font-size: 0.9rem;
 }
 
+.schedule-item .info {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
 .schedule-item .name {
   font-weight: 600;
+  display: block;
 }
 
 .schedule-item .time {
@@ -147,14 +154,22 @@ body {
   font-size: 0.85rem;
 }
 
+.schedule-item .edit-btn,
 .schedule-item .delete-btn {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 1.1rem;
-  padding: 0 0.25rem 0 0.5rem;
+  font-size: 0.95rem;
+  padding: 0.25rem;
   cursor: pointer;
   line-height: 1;
+  flex-shrink: 0;
+}
+
+.schedule-item .edit-btn {
+  color: var(--blue);
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 /* Activities */
@@ -456,4 +471,77 @@ body {
 
 .hidden {
   display: none !important;
+}
+
+/* Bottom tabs */
+.tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: var(--bg-card);
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 1rem calc(var(--safe-bottom) + 0.5rem);
+  z-index: 50;
+}
+
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.75rem;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  color: var(--blue);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* History */
+.history-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 3rem 1rem;
+  font-size: 0.95rem;
+}
+
+.history-day {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem 1.15rem;
+  margin-bottom: 1rem;
+}
+
+.history-day h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text);
+}
+
+.history-day .date-sub {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.history-day .schedule-list {
+  margin-top: 0.25rem;
+}
+
+.history-day.empty-day {
+  opacity: 0.7;
+}
+
+.history-day.empty-day p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
 }

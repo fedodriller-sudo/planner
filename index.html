@@ -39,6 +39,15 @@
       </div>
     </section>
 
+    <section id="screen-history" class="screen">
+      <header class="header">
+        <div class="logo">P</div>
+        <h1>History</h1>
+        <p class="subtitle">Last 7 days</p>
+      </header>
+      <div id="history-list"></div>
+    </section>
+
     <section id="screen-time" class="screen">
       <header class="header compact">
         <button type="button" class="btn-back" id="btn-back" aria-label="Go back">←</button>
@@ -61,6 +70,11 @@
       <button type="button" class="btn-primary" id="btn-confirm">Confirm activity</button>
     </section>
 
+    <nav class="tab-bar" id="tab-bar">
+      <button type="button" class="tab-btn active" data-tab="home">Plan</button>
+      <button type="button" class="tab-btn" data-tab="history">History</button>
+    </nav>
+
     <div id="modal-overlay" class="modal-overlay hidden">
       <div class="modal">
         <h2>Add custom activity</h2>
@@ -75,6 +89,6 @@
     <div id="toast" class="toast hidden"></div>
   </div>
 
-  <script src="js/app.js?v=3"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

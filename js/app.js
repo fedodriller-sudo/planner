@@ -4,6 +4,8 @@ const DEFAULT_ACTIVITIES = [
   'Driving lesson', 'Chores', 'Bike Repair', 'Nap'
 ];
 
+const HISTORY_DAYS = 7;
+
 const STORAGE_KEYS = {
   customActivities: 'planner_custom_activities',
   schedule: 'planner_schedule',
@@ -11,15 +13,19 @@ const STORAGE_KEYS = {
 };
 
 let selectedActivity = null;
+let editingItem = null;
 let checkInterval = null;
 const scheduledTimers = new Map();
 
 // ── DOM refs ──────────────────────────────────────────────
 const screenHome = document.getElementById('screen-home');
+const screenHistory = document.getElementById('screen-history');
 const screenTime = document.getElementById('screen-time');
+const tabBar = document.getElementById('tab-bar');
 const activityGrid = document.getElementById('activity-grid');
 const schedulePreview = document.getElementById('schedule-preview');
 const scheduleList = document.getElementById('schedule-list');
+const historyList = document.getElementById('history-list');
 const todayDate = document.getElementById('today-date');
 const selectedActivityName = document.getElementById('selected-activity-name');
 const startTimeInput = document.getElementById('start-time');
@@ -46,13 +52,56 @@ function notificationsSupported() {
   return 'Notification' in window && window.isSecureContext;
 }
 
-// ── Storage helpers ───────────────────────────────────────
-function todayKey() {
-  const d = new Date();
+// ── Date helpers ──────────────────────────────────────────
+function formatDateKey(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function todayKey() {
+  return formatDateKey(new Date());
+}
+
+function dateKeyDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return formatDateKey(d);
+}
+
+function formatDayLabel(dateKey) {
+  if (dateKey === todayKey()) return 'Today';
+  if (dateKey === dateKeyDaysAgo(1)) return 'Yesterday';
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+}
+
+// ── Storage helpers ───────────────────────────────────────
+function getAllSchedulesRaw() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.schedule)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function pruneOldHistory() {
+  const all = getAllSchedulesRaw();
+  const oldest = dateKeyDaysAgo(HISTORY_DAYS - 1);
+  let changed = false;
+
+  for (const key of Object.keys(all)) {
+    if (key < oldest) {
+      delete all[key];
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    localStorage.setItem(STORAGE_KEYS.schedule, JSON.stringify(all));
+  }
 }
 
 function getCustomActivities() {
@@ -71,21 +120,20 @@ function getAllActivities() {
   return [...DEFAULT_ACTIVITIES, ...getCustomActivities()];
 }
 
-function getSchedule() {
-  try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEYS.schedule)) || {};
-    return all[todayKey()] || [];
-  } catch {
-    return [];
-  }
+function getSchedule(dateKey = todayKey()) {
+  return getAllSchedulesRaw()[dateKey] || [];
 }
 
-function saveSchedule(items) {
-  const all = JSON.parse(localStorage.getItem(STORAGE_KEYS.schedule) || '{}');
-  all[todayKey()] = items;
+function saveSchedule(items, dateKey = todayKey()) {
+  const all = getAllSchedulesRaw();
+  all[dateKey] = items;
   localStorage.setItem(STORAGE_KEYS.schedule, JSON.stringify(all));
-  rescheduleAllNotifications();
-  syncNotificationsToSW(items);
+  pruneOldHistory();
+
+  if (dateKey === todayKey()) {
+    rescheduleAllNotifications();
+    syncNotificationsToSW(items);
+  }
 }
 
 function getNotifiedSet() {
@@ -103,6 +151,13 @@ function markNotified(id) {
   syncNotifiedToSW();
 }
 
+function clearNotifiedForItem(itemId) {
+  const set = getNotifiedSet();
+  set.delete(`${itemId}-start`);
+  set.delete(`${itemId}-end`);
+  localStorage.setItem(STORAGE_KEYS.notified, JSON.stringify([...set]));
+}
+
 function clearOldNotified() {
   const key = todayKey();
   const stored = localStorage.getItem(STORAGE_KEYS.notified + '_date');
@@ -115,7 +170,13 @@ function clearOldNotified() {
 // ── UI helpers ────────────────────────────────────────────
 function showScreen(name) {
   screenHome.classList.toggle('active', name === 'home');
+  screenHistory.classList.toggle('active', name === 'history');
   screenTime.classList.toggle('active', name === 'time');
+  tabBar?.classList.toggle('hidden', name === 'time');
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === name);
+  });
 }
 
 function showToast(msg) {
@@ -132,6 +193,12 @@ function formatTime(t) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
 function setTodayDate() {
   todayDate.textContent = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
@@ -143,7 +210,7 @@ function updateNotifBanner() {
 
   if (!window.isSecureContext) {
     notifStatus.textContent = isIOS()
-      ? 'iPhone needs HTTPS for notifications. Ask to set up GitHub Pages (free).'
+      ? 'iPhone needs HTTPS for notifications.'
       : 'Notifications need a secure (HTTPS) connection.';
     notifBanner.classList.add('error');
     btnEnableNotif.disabled = true;
@@ -170,7 +237,7 @@ function updateNotifBanner() {
   btnEnableNotif.classList.remove('hidden');
 
   if (Notification.permission === 'denied') {
-    notifStatus.textContent = 'Notifications blocked. Settings → Safari → Planner, or reinstall from Home Screen.';
+    notifStatus.textContent = 'Notifications blocked. Settings → Planner → Notifications.';
     notifBanner.classList.add('error');
   } else {
     notifStatus.textContent = 'Tap Enable, then Allow when iPhone asks.';
@@ -197,8 +264,10 @@ function renderActivities() {
 }
 
 function openTimePicker(name) {
+  editingItem = null;
   selectedActivity = name;
   selectedActivityName.textContent = name;
+  btnConfirm.textContent = 'Confirm activity';
   timeError.classList.add('hidden');
 
   const now = new Date();
@@ -209,6 +278,17 @@ function openTimePicker(name) {
   const end = new Date(now.getTime() + 60 * 60 * 1000);
   endTimeInput.value = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
 
+  showScreen('time');
+}
+
+function openEditTimePicker(item, dateKey) {
+  editingItem = { id: item.id, dateKey, name: item.name };
+  selectedActivity = item.name;
+  selectedActivityName.textContent = item.name;
+  btnConfirm.textContent = 'Save changes';
+  timeError.classList.add('hidden');
+  startTimeInput.value = item.start;
+  endTimeInput.value = item.end;
   showScreen('time');
 }
 
@@ -226,12 +306,12 @@ function saveCustomActivity() {
   const name = customInput.value.trim();
   if (!name) return;
 
-  const customs = getCustomActivities();
   if (getAllActivities().some(a => a.toLowerCase() === name.toLowerCase())) {
     showToast('Activity already exists');
     return;
   }
 
+  const customs = getCustomActivities();
   customs.push(name);
   saveCustomActivities(customs);
   closeCustomModal();
@@ -239,7 +319,27 @@ function saveCustomActivity() {
   openTimePicker(name);
 }
 
-// ── Schedule ──────────────────────────────────────────────
+// ── Schedule rendering ────────────────────────────────────
+function buildScheduleItemEl(item, dateKey) {
+  const li = document.createElement('li');
+  li.className = 'schedule-item';
+  li.innerHTML = `
+    <button type="button" class="info" aria-label="Edit ${escapeHtml(item.name)}">
+      <span class="name">${escapeHtml(item.name)}</span>
+      <span class="time">${formatTime(item.start)} – ${formatTime(item.end)}</span>
+    </button>
+    <button type="button" class="edit-btn" aria-label="Edit">Edit</button>
+    <button type="button" class="delete-btn" aria-label="Remove">×</button>
+  `;
+
+  const openEdit = () => openEditTimePicker(item, dateKey);
+  li.querySelector('.info').addEventListener('click', openEdit);
+  li.querySelector('.edit-btn').addEventListener('click', openEdit);
+  li.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.id, dateKey));
+
+  return li;
+}
+
 function renderSchedule() {
   const items = getSchedule().sort((a, b) => a.start.localeCompare(b.start));
 
@@ -250,29 +350,54 @@ function renderSchedule() {
 
   schedulePreview.classList.remove('hidden');
   scheduleList.innerHTML = '';
-
-  items.forEach(item => {
-    const li = document.createElement('li');
-    li.className = 'schedule-item';
-    li.innerHTML = `
-      <span class="name">${escapeHtml(item.name)}</span>
-      <span class="time">${formatTime(item.start)} – ${formatTime(item.end)}</span>
-      <button class="delete-btn" aria-label="Remove">×</button>
-    `;
-    li.querySelector('.delete-btn').addEventListener('click', () => deleteItem(item.id));
-    scheduleList.appendChild(li);
-  });
+  items.forEach(item => scheduleList.appendChild(buildScheduleItemEl(item, todayKey())));
 }
 
-function escapeHtml(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
+function renderHistory() {
+  historyList.innerHTML = '';
+  let hasAny = false;
+
+  for (let i = 0; i < HISTORY_DAYS; i++) {
+    const dateKey = dateKeyDaysAgo(i);
+    const items = getSchedule(dateKey).sort((a, b) => a.start.localeCompare(b.start));
+    if (items.length > 0) hasAny = true;
+
+    const day = document.createElement('div');
+    day.className = items.length === 0 ? 'history-day empty-day' : 'history-day';
+
+    const label = formatDayLabel(dateKey);
+    const sub = dateKey === todayKey() || dateKey === dateKeyDaysAgo(1)
+      ? ''
+      : dateKey;
+
+    day.innerHTML = `<h3>${escapeHtml(label)}${sub ? ` <span class="date-sub">${sub}</span>` : ''}</h3>`;
+
+    if (items.length === 0) {
+      const p = document.createElement('p');
+      p.textContent = 'No activities planned';
+      day.appendChild(p);
+    } else {
+      const ul = document.createElement('ul');
+      ul.className = 'schedule-list';
+      items.forEach(item => ul.appendChild(buildScheduleItemEl(item, dateKey)));
+      day.appendChild(ul);
+    }
+
+    historyList.appendChild(day);
+  }
+
+  if (!hasAny) {
+    const empty = document.createElement('p');
+    empty.className = 'history-empty';
+    empty.textContent = 'Your last 7 days will show up here once you start planning.';
+    historyList.prepend(empty);
+  }
 }
 
-function deleteItem(id) {
-  saveSchedule(getSchedule().filter(i => i.id !== id));
+function deleteItem(id, dateKey = todayKey()) {
+  saveSchedule(getSchedule(dateKey).filter(i => i.id !== id), dateKey);
   renderSchedule();
+  renderHistory();
   showToast('Activity removed');
 }
 
@@ -286,6 +411,24 @@ function confirmActivity() {
     return;
   }
 
+  if (editingItem) {
+    const { id, dateKey, name } = editingItem;
+    clearNotifiedForItem(id);
+
+    const updated = getSchedule(dateKey).map(item =>
+      item.id === id ? { ...item, name, start, end } : item
+    );
+
+    saveSchedule(updated, dateKey);
+    editingItem = null;
+    renderSchedule();
+    renderHistory();
+    showScreen(document.querySelector('.tab-btn.active')?.dataset.tab === 'history' ? 'history' : 'home');
+    showToast('Times updated!');
+    if (dateKey === todayKey()) requestNotificationPermission();
+    return;
+  }
+
   const item = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: selectedActivity,
@@ -296,6 +439,7 @@ function confirmActivity() {
 
   saveSchedule([...getSchedule(), item]);
   renderSchedule();
+  renderHistory();
   showScreen('home');
   showToast(`${selectedActivity} added!`);
   requestNotificationPermission();
@@ -315,9 +459,7 @@ function clearScheduledTimers() {
 }
 
 function scheduleAt(key, ms, title, body, notifyId) {
-  if (scheduledTimers.has(key)) {
-    clearTimeout(scheduledTimers.get(key));
-  }
+  if (scheduledTimers.has(key)) clearTimeout(scheduledTimers.get(key));
 
   const delay = ms - Date.now();
   if (delay <= 0) return;
@@ -346,62 +488,27 @@ function rescheduleAllNotifications() {
     const endMs = timeToMsToday(item.end);
 
     if (!notified.has(startId)) {
-      scheduleAt(
-        startId,
-        startMs,
-        `Time for ${item.name}!`,
-        `Your ${item.name} session starts now.`,
-        startId
-      );
+      scheduleAt(startId, startMs, `Time for ${item.name}!`, `Your ${item.name} session starts now.`, startId);
     }
-
     if (!notified.has(endId)) {
-      scheduleAt(
-        endId,
-        endMs,
-        `${item.name} finished`,
-        `Your ${item.name} session is over.`,
-        endId
-      );
+      scheduleAt(endId, endMs, `${item.name} finished`, `Your ${item.name} session is over.`, endId);
     }
   });
 }
 
 async function requestNotificationPermission() {
-  showToast('Requesting permission…');
-
-  if (!window.isSecureContext) {
-    showToast('Need HTTPS — Mac server won\'t work for notifications');
-    updateNotifBanner();
-    return false;
-  }
-
-  if (!('Notification' in window)) {
-    showToast('Notifications not supported here');
-    updateNotifBanner();
-    return false;
-  }
+  if (!window.isSecureContext || !('Notification' in window)) return false;
 
   if (Notification.permission === 'default') {
     const result = await Notification.requestPermission();
     updateNotifBanner();
-    if (result === 'granted') {
-      showToast('Notifications enabled!');
-      rescheduleAllNotifications();
-      return true;
-    }
-    showToast('Permission denied');
-    return false;
+    if (result === 'granted') rescheduleAllNotifications();
+    return result === 'granted';
   }
 
   updateNotifBanner();
-  if (Notification.permission === 'granted') {
-    rescheduleAllNotifications();
-    return true;
-  }
-
-  showToast('Enable in iPhone Settings, then reopen Planner');
-  return false;
+  if (Notification.permission === 'granted') rescheduleAllNotifications();
+  return Notification.permission === 'granted';
 }
 
 async function showNotification(title, body) {
@@ -434,7 +541,10 @@ async function sendTestNotification() {
   }
 
   const ok = await requestNotificationPermission();
-  if (!ok) return;
+  if (!ok) {
+    showToast('Notifications not allowed');
+    return;
+  }
 
   await showNotification('Planner works!', 'You will get alerts when activities start.');
   showToast('Test notification sent!');
@@ -481,9 +591,7 @@ function syncNotificationsToSW(items) {
   if (navigator.serviceWorker?.controller) {
     navigator.serviceWorker.controller.postMessage(payload);
   } else {
-    navigator.serviceWorker?.ready.then(reg => {
-      reg.active?.postMessage(payload);
-    });
+    navigator.serviceWorker?.ready.then(reg => reg.active?.postMessage(payload));
   }
 }
 
@@ -503,7 +611,12 @@ async function registerSW() {
 }
 
 // ── Event listeners ───────────────────────────────────────
-btnBack?.addEventListener('click', () => showScreen('home'));
+btnBack?.addEventListener('click', () => {
+  editingItem = null;
+  const tab = document.querySelector('.tab-btn.active')?.dataset.tab || 'home';
+  showScreen(tab);
+});
+
 btnConfirm?.addEventListener('click', confirmActivity);
 btnCancelCustom?.addEventListener('click', closeCustomModal);
 btnSaveCustom?.addEventListener('click', saveCustomActivity);
@@ -512,7 +625,13 @@ btnEnableNotif?.addEventListener('click', requestNotificationPermission);
 customInput?.addEventListener('keydown', e => { if (e.key === 'Enter') saveCustomActivity(); });
 modalOverlay?.addEventListener('click', e => { if (e.target === modalOverlay) closeCustomModal(); });
 
-// Backup: event delegation in case cached HTML differs
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    showScreen(btn.dataset.tab);
+    if (btn.dataset.tab === 'history') renderHistory();
+  });
+});
+
 document.addEventListener('click', e => {
   const t = e.target;
   if (t.id === 'btn-test-notif') sendTestNotification();
@@ -523,6 +642,7 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     checkDueNotifications();
     rescheduleAllNotifications();
+    renderHistory();
   }
 });
 
@@ -533,10 +653,12 @@ window.addEventListener('focus', () => {
 
 // ── Init ──────────────────────────────────────────────────
 async function init() {
+  pruneOldHistory();
   setTodayDate();
   clearOldNotified();
   renderActivities();
   renderSchedule();
+  renderHistory();
   updateNotifBanner();
   await registerSW();
   if (notificationsSupported() && Notification.permission === 'granted') {
